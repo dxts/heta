@@ -12,24 +12,13 @@ use crate::{
     action::Action,
     aws::state::AwsState,
     components::{
-        Component,
-        breadcrumb::Breadcrumb,
-        command_bar::CommandBar,
-        header::Header,
+        Component, breadcrumb::Breadcrumb, command_bar::CommandBar, header::Header,
         main_layout::MainLayout,
     },
     config::Config,
     tui::{Event, Tui},
-    views::{
-        profiles::ProfilesView,
-    },
+    views::{ViewTypes, profiles::ProfilesView},
 };
-
-/// Which view is currently displayed in the resource area
-enum ActiveView {
-    Profiles,
-    Home,
-}
 
 pub struct App {
     config: Config,
@@ -49,7 +38,7 @@ pub struct App {
     breadcrumb: Breadcrumb,
 
     // Views
-    active_view: ActiveView,
+    active_view: ViewTypes,
     profiles_view: ProfilesView,
     home_view: MainLayout,
 }
@@ -86,7 +75,7 @@ impl App {
             header,
             command_bar: CommandBar::default(),
             breadcrumb: Breadcrumb::default(),
-            active_view: ActiveView::Profiles,
+            active_view: ViewTypes::Profiles,
             profiles_view,
             home_view: MainLayout::new(),
         })
@@ -145,8 +134,8 @@ impl App {
 
         // Route to active view first — if it handles the key, stop
         let view_action = match self.active_view {
-            ActiveView::Profiles => self.profiles_view.handle_key_event(key)?,
-            ActiveView::Home => self.home_view.handle_key_event(key)?,
+            ViewTypes::Profiles => self.profiles_view.handle_key_event(key)?,
+            ViewTypes::Home => self.home_view.handle_key_event(key)?,
         };
         if let Some(action) = view_action {
             action_tx.send(action)?;
@@ -199,8 +188,24 @@ impl App {
                 Action::Render => self.render(tui)?,
                 Action::OpenCommandBar => self.mode = Mode::Command,
                 Action::OpenFilterBar => self.mode = Mode::Filter,
-                Action::CloseBar | Action::SubmitCommand(_) | Action::SubmitFilter(_) => {
+                Action::CloseBar | Action::SubmitFilter(_) => {
                     self.mode = Mode::Normal;
+                }
+                Action::SubmitCommand(ref cmd) => {
+                    self.mode = Mode::Normal;
+                    if let Some(view) = ViewTypes::from_command(cmd) {
+                        self.action_tx.send(Action::SwitchView(view))?;
+                    } else {
+                        self.action_tx
+                            .send(Action::Error(format!("Unknown command: {cmd}")))?;
+                    }
+                }
+                Action::SwitchView(view) => {
+                    self.active_view = view;
+                    self.breadcrumb.set_segments(vec![
+                        self.aws_state.profile.clone(),
+                        view.label().to_string(),
+                    ]);
                 }
                 Action::ProfileSelected {
                     ref name,
@@ -214,7 +219,7 @@ impl App {
                         .set_region(self.aws_state.region().unwrap_or("—"));
                     self.breadcrumb
                         .set_segments(vec![name.clone(), "home".into()]);
-                    self.active_view = ActiveView::Home;
+                    self.active_view = ViewTypes::Home;
                 }
                 _ => {}
             }
@@ -226,8 +231,8 @@ impl App {
 
             // Propagate to active view
             let view_result = match self.active_view {
-                ActiveView::Profiles => self.profiles_view.update(action.clone()),
-                ActiveView::Home => self.home_view.update(action.clone()),
+                ViewTypes::Profiles => self.profiles_view.update(action.clone()),
+                ViewTypes::Home => self.home_view.update(action.clone()),
             };
             if let Some(follow_up) = view_result? {
                 self.action_tx.send(follow_up)?;
@@ -279,8 +284,8 @@ impl App {
 
             // Active view in resource area
             let view_result = match self.active_view {
-                ActiveView::Profiles => self.profiles_view.draw(frame, layout[2]),
-                ActiveView::Home => self.home_view.draw(frame, layout[2]),
+                ViewTypes::Profiles => self.profiles_view.draw(frame, layout[2]),
+                ViewTypes::Home => self.home_view.draw(frame, layout[2]),
             };
             if let Err(e) = view_result {
                 let _ = self
