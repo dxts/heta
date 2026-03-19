@@ -1,12 +1,23 @@
-use crossterm::event::KeyEvent;
-use ratatui::prelude::Rect;
+use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::{
+    layout::{Constraint, Layout, Rect},
+    style::{Color, Style},
+    widgets::{Block, Borders},
+};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tracing::{debug, info};
 
 use crate::{
     action::Action,
-    components::{Component, fps::FpsCounter, home::Home},
+    aws::state::AwsState,
+    components::{
+        Component,
+        breadcrumb::Breadcrumb,
+        command_bar::CommandBar,
+        header::Header,
+        home::Home,
+    },
     config::Config,
     tui::{Event, Tui},
 };
@@ -15,54 +26,59 @@ pub struct App {
     config: Config,
     tick_rate: f64,
     frame_rate: f64,
-    components: Vec<Box<dyn Component>>,
     should_quit: bool,
     should_suspend: bool,
     mode: Mode,
     last_tick_key_events: Vec<KeyEvent>,
     action_tx: mpsc::UnboundedSender<Action>,
     action_rx: mpsc::UnboundedReceiver<Action>,
+    aws_state: AwsState,
+
+    // Layout components
+    header: Header,
+    command_bar: CommandBar,
+    resource_area: Home,
+    breadcrumb: Breadcrumb,
 }
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Mode {
     #[default]
-    Home,
+    Normal,
+    Command,
+    Filter,
 }
 
 impl App {
-    pub fn new(tick_rate: f64, frame_rate: f64) -> color_eyre::Result<Self> {
+    pub async fn new(tick_rate: f64, frame_rate: f64) -> color_eyre::Result<Self> {
         let (action_tx, action_rx) = mpsc::unbounded_channel();
+        let aws_state = AwsState::init().await?;
+
+        let header = Header::new("default", aws_state.region());
+
         Ok(Self {
             tick_rate,
             frame_rate,
-            components: vec![Box::new(Home::new()), Box::new(FpsCounter::default())],
             should_quit: false,
             should_suspend: false,
             config: Config::new()?,
-            mode: Mode::Home,
+            mode: Mode::Normal,
             last_tick_key_events: Vec::new(),
             action_tx,
             action_rx,
+            aws_state,
+            header,
+            command_bar: CommandBar::default(),
+            resource_area: Home::new(),
+            breadcrumb: Breadcrumb::default(),
         })
     }
 
     pub async fn run(&mut self) -> color_eyre::Result<()> {
         let mut tui = Tui::new()?
-            // .mouse(true) // uncomment this line to enable mouse support
             .tick_rate(self.tick_rate)
             .frame_rate(self.frame_rate);
         tui.enter()?;
-
-        for component in self.components.iter_mut() {
-            component.register_action_handler(self.action_tx.clone())?;
-        }
-        for component in self.components.iter_mut() {
-            component.register_config_handler(self.config.clone())?;
-        }
-        for component in self.components.iter_mut() {
-            component.init(tui.size()?)?;
-        }
 
         let action_tx = self.action_tx.clone();
         loop {
@@ -72,7 +88,6 @@ impl App {
                 tui.suspend()?;
                 action_tx.send(Action::Resume)?;
                 action_tx.send(Action::ClearScreen)?;
-                // tui.mouse(true);
                 tui.enter()?;
             } else if self.should_quit {
                 tui.stop()?;
@@ -96,33 +111,44 @@ impl App {
             Event::Key(key) => self.handle_key_event(key)?,
             _ => {}
         }
-        for component in self.components.iter_mut() {
-            if let Some(action) = component.handle_events(Some(event.clone()))? {
-                action_tx.send(action)?;
-            }
-        }
         Ok(())
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> color_eyre::Result<()> {
         let action_tx = self.action_tx.clone();
-        let Some(keymap) = self.config.keybindings.0.get(&self.mode) else {
+
+        // Command bar captures all input when active
+        if self.command_bar.is_active() {
+            if let Some(action) = self.command_bar.handle_key_event(key)? {
+                action_tx.send(action)?;
+            }
             return Ok(());
-        };
-        match keymap.get(&vec![key]) {
-            Some(action) => {
-                info!("Got action: {action:?}");
-                action_tx.send(action.clone())?;
+        }
+
+        // Normal mode key handling
+        match key.code {
+            KeyCode::Char(':') => {
+                action_tx.send(Action::OpenCommandBar)?;
+            }
+            KeyCode::Char('/') => {
+                action_tx.send(Action::OpenFilterBar)?;
             }
             _ => {
-                // If the key was not handled as a single key action,
-                // then consider it for multi-key combinations.
-                self.last_tick_key_events.push(key);
-
-                // Check for multi-key combinations
-                if let Some(action) = keymap.get(&self.last_tick_key_events) {
-                    info!("Got action: {action:?}");
-                    action_tx.send(action.clone())?;
+                // Check keybindings config
+                if let Some(keymap) = self.config.keybindings.0.get(&self.mode) {
+                    match keymap.get(&vec![key]) {
+                        Some(action) => {
+                            info!("Got action: {action:?}");
+                            action_tx.send(action.clone())?;
+                        }
+                        _ => {
+                            self.last_tick_key_events.push(key);
+                            if let Some(action) = keymap.get(&self.last_tick_key_events) {
+                                info!("Got action: {action:?}");
+                                action_tx.send(action.clone())?;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -144,12 +170,24 @@ impl App {
                 Action::ClearScreen => tui.terminal.clear()?,
                 Action::Resize(w, h) => self.handle_resize(tui, w, h)?,
                 Action::Render => self.render(tui)?,
+                Action::OpenCommandBar => self.mode = Mode::Command,
+                Action::OpenFilterBar => self.mode = Mode::Filter,
+                Action::CloseBar | Action::SubmitCommand(_) | Action::SubmitFilter(_) => {
+                    self.mode = Mode::Normal;
+                }
                 _ => {}
             }
-            for component in self.components.iter_mut() {
-                if let Some(action) = component.update(action.clone())? {
-                    self.action_tx.send(action)?
-                };
+
+            // Propagate to all layout components
+            for result in [
+                self.header.update(action.clone()),
+                self.command_bar.update(action.clone()),
+                self.resource_area.update(action.clone()),
+                self.breadcrumb.update(action.clone()),
+            ] {
+                if let Some(follow_up) = result? {
+                    self.action_tx.send(follow_up)?;
+                }
             }
         }
         Ok(())
@@ -163,12 +201,47 @@ impl App {
 
     fn render(&mut self, tui: &mut Tui) -> color_eyre::Result<()> {
         tui.draw(|frame| {
-            for component in self.components.iter_mut() {
-                if let Err(err) = component.draw(frame, frame.area()) {
-                    let _ = self
-                        .action_tx
-                        .send(Action::Error(format!("Failed to draw: {:?}", err)));
-                }
+            let area = frame.area();
+
+            // Command bar gets 1 line when active, 0 when hidden
+            let bar_height = if self.command_bar.is_active() { 1 } else { 0 };
+
+            let layout = Layout::vertical([
+                Constraint::Length(5),          // header
+                Constraint::Length(bar_height), // command/filter bar
+                Constraint::Min(1),             // resource area
+                Constraint::Length(1),          // breadcrumb
+            ])
+            .split(area);
+
+            // Header with border
+            let header_block = Block::default()
+                .borders(Borders::BOTTOM)
+                .border_style(Style::default().fg(Color::DarkGray));
+            let header_inner = header_block.inner(layout[0]);
+            frame.render_widget(header_block, layout[0]);
+            if let Err(e) = self.header.draw(frame, header_inner) {
+                let _ = self.action_tx.send(Action::Error(format!("Header draw error: {e}")));
+            }
+
+            // Command/filter bar
+            if self.command_bar.is_active() && let Err(e) = self.command_bar.draw(frame, layout[1]) {
+                let _ = self.action_tx.send(Action::Error(format!("Command bar draw error: {e}")));
+            }
+
+            // Resource area
+            if let Err(e) = self.resource_area.draw(frame, layout[2]) {
+                let _ = self.action_tx.send(Action::Error(format!("Resource area draw error: {e}")));
+            }
+
+            // Breadcrumb with top border
+            let breadcrumb_block = Block::default()
+                .borders(Borders::TOP)
+                .border_style(Style::default().fg(Color::DarkGray));
+            let breadcrumb_inner = breadcrumb_block.inner(layout[3]);
+            frame.render_widget(breadcrumb_block, layout[3]);
+            if let Err(e) = self.breadcrumb.draw(frame, breadcrumb_inner) {
+                let _ = self.action_tx.send(Action::Error(format!("Breadcrumb draw error: {e}")));
             }
         })?;
         Ok(())

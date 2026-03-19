@@ -12,4 +12,11 @@ pub enum Action {
     ClearScreen,
     Error(String),
     Help,
+    ProfilesLoaded(Vec<String>),
+    // Command bar
+    OpenCommandBar,
+    OpenFilterBar,
+    CloseBar,
+    SubmitCommand(String),
+    SubmitFilter(String),
 }

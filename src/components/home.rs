@@ -1,47 +1,41 @@
-use ratatui::{prelude::*, widgets::*};
-use tokio::sync::mpsc::UnboundedSender;
+use ratatui::{
+    Frame,
+    layout::Rect,
+    style::{Color, Modifier, Style},
+    widgets::{Block, Borders, Paragraph},
+};
 
 use super::Component;
-use crate::{action::Action, config::Config};
+use crate::action::Action;
 
 #[derive(Default)]
-pub struct Home {
-    command_tx: Option<UnboundedSender<Action>>,
-    config: Config,
-}
+pub struct Home;
 
 impl Home {
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 }
 
 impl Component for Home {
-    fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> color_eyre::Result<()> {
-        self.command_tx = Some(tx);
-        Ok(())
-    }
-
-    fn register_config_handler(&mut self, config: Config) -> color_eyre::Result<()> {
-        self.config = config;
-        Ok(())
-    }
-
-    fn update(&mut self, action: Action) -> color_eyre::Result<Option<Action>> {
-        match action {
-            Action::Tick => {
-                // add any logic here that should run on every tick
-            }
-            Action::Render => {
-                // add any logic here that should run on every render
-            }
-            _ => {}
-        }
+    fn update(&mut self, _action: Action) -> color_eyre::Result<Option<Action>> {
         Ok(None)
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> color_eyre::Result<()> {
-        frame.render_widget(Paragraph::new("hello world"), area);
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray))
+            .title(" Resources ")
+            .title_style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD));
+
+        frame.render_widget(
+            Paragraph::new("No view selected. Press : to open command bar.")
+                .style(Style::default().fg(Color::DarkGray))
+                .block(block),
+            area,
+        );
+
         Ok(())
     }
 }
