@@ -11,7 +11,7 @@ pub mod breadcrumb;
 pub mod command_bar;
 pub mod fps;
 pub mod header;
-pub mod home;
+pub mod main_layout;
 
 /// `Component` is a trait that represents a visual and interactive element of the user interface.
 ///

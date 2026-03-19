@@ -39,6 +39,14 @@ impl Header {
         }
     }
 
+    pub fn set_profile(&mut self, profile: &str) {
+        self.profile = profile.to_string();
+    }
+
+    pub fn set_region(&mut self, region: &str) {
+        self.region = region.to_string();
+    }
+
     pub fn set_context_actions(&mut self, actions: Vec<(String, String)>) {
         self.context_actions = actions;
     }

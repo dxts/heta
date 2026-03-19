@@ -9,15 +9,15 @@ use super::Component;
 use crate::action::Action;
 
 #[derive(Default)]
-pub struct Home;
+pub struct MainLayout;
 
-impl Home {
+impl MainLayout {
     pub fn new() -> Self {
         Self
     }
 }
 
-impl Component for Home {
+impl Component for MainLayout {
     fn update(&mut self, _action: Action) -> color_eyre::Result<Option<Action>> {
         Ok(None)
     }

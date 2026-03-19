@@ -16,11 +16,20 @@ use crate::{
         breadcrumb::Breadcrumb,
         command_bar::CommandBar,
         header::Header,
-        home::Home,
+        main_layout::MainLayout,
     },
     config::Config,
     tui::{Event, Tui},
+    views::{
+        profiles::ProfilesView,
+    },
 };
+
+/// Which view is currently displayed in the resource area
+enum ActiveView {
+    Profiles,
+    Home,
+}
 
 pub struct App {
     config: Config,
@@ -37,8 +46,12 @@ pub struct App {
     // Layout components
     header: Header,
     command_bar: CommandBar,
-    resource_area: Home,
     breadcrumb: Breadcrumb,
+
+    // Views
+    active_view: ActiveView,
+    profiles_view: ProfilesView,
+    home_view: MainLayout,
 }
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -54,7 +67,10 @@ impl App {
         let (action_tx, action_rx) = mpsc::unbounded_channel();
         let aws_state = AwsState::init().await?;
 
-        let header = Header::new("default", aws_state.region());
+        let header = Header::new("—", aws_state.region());
+
+        let mut profiles_view = ProfilesView::default();
+        profiles_view.register_action_handler(action_tx.clone())?;
 
         Ok(Self {
             tick_rate,
@@ -69,8 +85,10 @@ impl App {
             aws_state,
             header,
             command_bar: CommandBar::default(),
-            resource_area: Home::new(),
             breadcrumb: Breadcrumb::default(),
+            active_view: ActiveView::Profiles,
+            profiles_view,
+            home_view: MainLayout::new(),
         })
     }
 
@@ -83,7 +101,7 @@ impl App {
         let action_tx = self.action_tx.clone();
         loop {
             self.handle_events(&mut tui).await?;
-            self.handle_actions(&mut tui)?;
+            self.handle_actions(&mut tui).await?;
             if self.should_suspend {
                 tui.suspend()?;
                 action_tx.send(Action::Resume)?;
@@ -125,7 +143,17 @@ impl App {
             return Ok(());
         }
 
-        // Normal mode key handling
+        // Route to active view first — if it handles the key, stop
+        let view_action = match self.active_view {
+            ActiveView::Profiles => self.profiles_view.handle_key_event(key)?,
+            ActiveView::Home => self.home_view.handle_key_event(key)?,
+        };
+        if let Some(action) = view_action {
+            action_tx.send(action)?;
+            return Ok(());
+        }
+
+        // Global key handling
         match key.code {
             KeyCode::Char(':') => {
                 action_tx.send(Action::OpenCommandBar)?;
@@ -134,7 +162,6 @@ impl App {
                 action_tx.send(Action::OpenFilterBar)?;
             }
             _ => {
-                // Check keybindings config
                 if let Some(keymap) = self.config.keybindings.0.get(&self.mode) {
                     match keymap.get(&vec![key]) {
                         Some(action) => {
@@ -155,7 +182,7 @@ impl App {
         Ok(())
     }
 
-    fn handle_actions(&mut self, tui: &mut Tui) -> color_eyre::Result<()> {
+    async fn handle_actions(&mut self, tui: &mut Tui) -> color_eyre::Result<()> {
         while let Ok(action) = self.action_rx.try_recv() {
             if action != Action::Tick && action != Action::Render {
                 debug!("{action:?}");
@@ -175,19 +202,35 @@ impl App {
                 Action::CloseBar | Action::SubmitCommand(_) | Action::SubmitFilter(_) => {
                     self.mode = Mode::Normal;
                 }
+                Action::ProfileSelected {
+                    ref name,
+                    ref region,
+                } => {
+                    self.aws_state
+                        .reload_for_profile(name, region.as_deref())
+                        .await?;
+                    self.header.set_profile(name);
+                    self.header
+                        .set_region(self.aws_state.region().unwrap_or("—"));
+                    self.breadcrumb
+                        .set_segments(vec![name.clone(), "home".into()]);
+                    self.active_view = ActiveView::Home;
+                }
                 _ => {}
             }
 
-            // Propagate to all layout components
-            for result in [
-                self.header.update(action.clone()),
-                self.command_bar.update(action.clone()),
-                self.resource_area.update(action.clone()),
-                self.breadcrumb.update(action.clone()),
-            ] {
-                if let Some(follow_up) = result? {
-                    self.action_tx.send(follow_up)?;
-                }
+            // Propagate to chrome components
+            self.header.update(action.clone())?;
+            self.command_bar.update(action.clone())?;
+            self.breadcrumb.update(action.clone())?;
+
+            // Propagate to active view
+            let view_result = match self.active_view {
+                ActiveView::Profiles => self.profiles_view.update(action.clone()),
+                ActiveView::Home => self.home_view.update(action.clone()),
+            };
+            if let Some(follow_up) = view_result? {
+                self.action_tx.send(follow_up)?;
             }
         }
         Ok(())
@@ -203,7 +246,6 @@ impl App {
         tui.draw(|frame| {
             let area = frame.area();
 
-            // Command bar gets 1 line when active, 0 when hidden
             let bar_height = if self.command_bar.is_active() { 1 } else { 0 };
 
             let layout = Layout::vertical([
@@ -214,34 +256,48 @@ impl App {
             ])
             .split(area);
 
-            // Header with border
+            // Header
             let header_block = Block::default()
                 .borders(Borders::BOTTOM)
                 .border_style(Style::default().fg(Color::DarkGray));
             let header_inner = header_block.inner(layout[0]);
             frame.render_widget(header_block, layout[0]);
             if let Err(e) = self.header.draw(frame, header_inner) {
-                let _ = self.action_tx.send(Action::Error(format!("Header draw error: {e}")));
+                let _ = self
+                    .action_tx
+                    .send(Action::Error(format!("Header draw error: {e}")));
             }
 
             // Command/filter bar
-            if self.command_bar.is_active() && let Err(e) = self.command_bar.draw(frame, layout[1]) {
-                let _ = self.action_tx.send(Action::Error(format!("Command bar draw error: {e}")));
+            if self.command_bar.is_active() {
+                if let Err(e) = self.command_bar.draw(frame, layout[1]) {
+                    let _ = self
+                        .action_tx
+                        .send(Action::Error(format!("Bar draw error: {e}")));
+                }
             }
 
-            // Resource area
-            if let Err(e) = self.resource_area.draw(frame, layout[2]) {
-                let _ = self.action_tx.send(Action::Error(format!("Resource area draw error: {e}")));
+            // Active view in resource area
+            let view_result = match self.active_view {
+                ActiveView::Profiles => self.profiles_view.draw(frame, layout[2]),
+                ActiveView::Home => self.home_view.draw(frame, layout[2]),
+            };
+            if let Err(e) = view_result {
+                let _ = self
+                    .action_tx
+                    .send(Action::Error(format!("View draw error: {e}")));
             }
 
-            // Breadcrumb with top border
+            // Breadcrumb
             let breadcrumb_block = Block::default()
                 .borders(Borders::TOP)
                 .border_style(Style::default().fg(Color::DarkGray));
             let breadcrumb_inner = breadcrumb_block.inner(layout[3]);
             frame.render_widget(breadcrumb_block, layout[3]);
             if let Err(e) = self.breadcrumb.draw(frame, breadcrumb_inner) {
-                let _ = self.action_tx.send(Action::Error(format!("Breadcrumb draw error: {e}")));
+                let _ = self
+                    .action_tx
+                    .send(Action::Error(format!("Breadcrumb draw error: {e}")));
             }
         })?;
         Ok(())
