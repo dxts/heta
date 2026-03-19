@@ -8,8 +8,8 @@ use ratatui::{
 };
 use tui_input::{Input, backend::crossterm::EventHandler};
 
-use super::Component;
 use crate::action::Action;
+use crate::components::Component;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BarMode {

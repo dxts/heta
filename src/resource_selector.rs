@@ -1,21 +1,18 @@
-//! Views are also components but more complex ones
-//! that usually correspond to the primary interactions with an aws resource.
-
 use serde::{Deserialize, Serialize};
 
-pub mod profiles;
-
+/// Define all resource types (eg S3 Buckets, Lambda Functions, Profiles, ...)
+/// which can be selected using the command bar like `:s3` etc
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum ViewTypes {
+pub enum ResourceType {
     Profiles,
-    Home,
+    Empty,
 }
 
-impl ViewTypes {
+impl ResourceType {
     pub fn from_command(cmd: &str) -> Option<Self> {
         match cmd.trim().to_lowercase().as_str() {
             "profiles" | "profile" | "p" => Some(Self::Profiles),
-            "home" | "h" => Some(Self::Home),
+            "empty" | "e" => Some(Self::Empty),
             _ => None,
         }
     }
@@ -23,7 +20,7 @@ impl ViewTypes {
     pub fn label(&self) -> &'static str {
         match self {
             Self::Profiles => "profiles",
-            Self::Home => "home",
+            Self::Empty => "empty",
         }
     }
 }

@@ -6,8 +6,10 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use super::Component;
-use crate::{action::Action, components::fps::FpsCounter};
+use crate::{
+    action::Action,
+    components::{Component, common::fps::FpsCounter},
+};
 
 pub struct Header {
     profile: String,
@@ -22,8 +24,8 @@ impl Default for Header {
     fn default() -> Self {
         Self {
             profile: "default".into(),
-            region: "—".into(),
-            account: "—".into(),
+            region: "-".into(),
+            account: "-".into(),
             context_actions: Vec::new(),
             fps_counter: FpsCounter::default(),
         }
@@ -34,7 +36,7 @@ impl Header {
     pub fn new(profile: &str, region: Option<&str>) -> Self {
         Self {
             profile: profile.into(),
-            region: region.unwrap_or("—").into(),
+            region: region.unwrap_or("-").into(),
             ..Default::default()
         }
     }
@@ -138,8 +140,8 @@ impl Component for Header {
         // Logo column: logo at top, FPS at bottom
         let logo_col = columns[3];
         let logo_rows = Layout::vertical([
-            Constraint::Min(1),      // logo
-            Constraint::Length(1),   // fps
+            Constraint::Min(1),    // logo
+            Constraint::Length(1), // fps
         ])
         .split(logo_col);
 

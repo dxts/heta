@@ -6,8 +6,8 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use super::Component;
 use crate::action::Action;
+use crate::components::Component;
 
 pub struct Breadcrumb {
     segments: Vec<String>,

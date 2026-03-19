@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use strum::Display;
 
-use crate::{aws::profiles::ProfileInfo, views::ViewTypes};
+use crate::{aws::profiles::ProfileInfo, resource_selector::ResourceType};
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Action {
@@ -21,7 +21,7 @@ pub enum Action {
     SubmitCommand(String),
     SubmitFilter(String),
     // Navigation
-    SwitchView(ViewTypes),
+    SwitchView(ResourceType),
     // Profiles
     #[serde(skip)]
     ProfilesLoaded(Vec<ProfileInfo>),
@@ -29,5 +29,8 @@ pub enum Action {
     SelectPrevious,
     Confirm,
     #[serde(skip)]
-    ProfileSelected { name: String, region: Option<String> },
+    ProfileSelected {
+        name: String,
+        region: Option<String>,
+    },
 }

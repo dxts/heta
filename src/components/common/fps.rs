@@ -3,14 +3,12 @@ use std::time::Instant;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    style::{Style, Stylize},
-    text::Span,
+    style::Stylize,
     widgets::Paragraph,
 };
 
-use super::Component;
-
 use crate::action::Action;
+use crate::components::Component;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FpsCounter {
@@ -82,7 +80,7 @@ impl Component for FpsCounter {
             "{:.2} ticks/sec, {:.2} FPS",
             self.ticks_per_second, self.frames_per_second
         );
-        let span = Span::styled(message, Style::new().dim());
+        let span = message.dim();
         let paragraph = Paragraph::new(span).right_aligned();
         frame.render_widget(paragraph, top);
         Ok(())

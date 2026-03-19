@@ -5,19 +5,19 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use super::Component;
 use crate::action::Action;
+use crate::components::Component;
 
 #[derive(Default)]
-pub struct MainLayout;
+pub struct EmptyArea;
 
-impl MainLayout {
+impl EmptyArea {
     pub fn new() -> Self {
         Self
     }
 }
 
-impl Component for MainLayout {
+impl Component for EmptyArea {
     fn update(&mut self, _action: Action) -> color_eyre::Result<Option<Action>> {
         Ok(None)
     }
@@ -27,7 +27,11 @@ impl Component for MainLayout {
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::DarkGray))
             .title(" Resources ")
-            .title_style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD));
+            .title_style(
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            );
 
         frame.render_widget(
             Paragraph::new("No view selected. Press : to open command bar.")
