@@ -9,14 +9,14 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{action::Action, aws::profiles::ProfileInfo, components::Component};
 
-pub struct ProfilesView {
+pub struct ProfilesList {
     command_tx: Option<UnboundedSender<Action>>,
     profiles: Vec<ProfileInfo>,
     table_state: TableState,
     loading: bool,
 }
 
-impl Default for ProfilesView {
+impl Default for ProfilesList {
     fn default() -> Self {
         Self {
             command_tx: None,
@@ -27,7 +27,7 @@ impl Default for ProfilesView {
     }
 }
 
-impl ProfilesView {
+impl ProfilesList {
     fn selected_profile(&self) -> Option<&ProfileInfo> {
         self.table_state
             .selected()
@@ -57,11 +57,10 @@ impl ProfilesView {
     }
 }
 
-impl Component for ProfilesView {
+impl Component for ProfilesList {
     fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> color_eyre::Result<()> {
         self.command_tx = Some(tx.clone());
 
-        // Spawn async profile loading
         tokio::spawn(async move {
             match crate::aws::profiles::list_profiles().await {
                 Ok(profiles) => {

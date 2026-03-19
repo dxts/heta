@@ -17,7 +17,7 @@ use crate::{
     },
     config::Config,
     tui::{Event, Tui},
-    views::{ViewTypes, profiles::ProfilesView},
+    views::{ViewTypes, profiles::ProfilesList},
 };
 
 pub struct App {
@@ -39,7 +39,7 @@ pub struct App {
 
     // Views
     active_view: ViewTypes,
-    profiles_view: ProfilesView,
+    profiles_view: ProfilesList,
     home_view: MainLayout,
 }
 
@@ -58,7 +58,7 @@ impl App {
 
         let header = Header::new("—", aws_state.region());
 
-        let mut profiles_view = ProfilesView::default();
+        let mut profiles_view = ProfilesList::default();
         profiles_view.register_action_handler(action_tx.clone())?;
 
         Ok(Self {
