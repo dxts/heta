@@ -96,7 +96,7 @@ impl App {
             header,
             command_bar: CommandBar::default(),
             breadcrumb: Breadcrumb::default(),
-            active_view: ResourceType::S3Buckets,
+            active_view: ResourceType::Profiles,
             profiles_view,
             s3_buckets_view,
             empty_view: EmptyArea::new(),
