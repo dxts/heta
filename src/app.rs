@@ -17,6 +17,7 @@ use crate::{
             breadcrumb::Breadcrumb, command_bar::CommandBar, empty_area::EmptyArea, header::Header,
         },
         profiles::ProfilesList,
+        s3_buckets::S3BucketsList,
     },
     config::Config,
     resource_selector::ResourceType,
@@ -51,6 +52,7 @@ pub struct App {
     // ── Views: only one is active at a time ──
     active_view: ResourceType,
     profiles_view: ProfilesList,
+    s3_buckets_view: S3BucketsList,
     empty_view: EmptyArea,
 }
 
@@ -77,6 +79,9 @@ impl App {
         let mut profiles_view = ProfilesList::default();
         profiles_view.register_action_handler(action_tx.clone())?;
 
+        let mut s3_buckets_view = S3BucketsList::default();
+        s3_buckets_view.register_action_handler(action_tx.clone())?;
+
         Ok(Self {
             tick_rate,
             frame_rate,
@@ -91,8 +96,9 @@ impl App {
             header,
             command_bar: CommandBar::default(),
             breadcrumb: Breadcrumb::default(),
-            active_view: ResourceType::Profiles,
+            active_view: ResourceType::S3Buckets,
             profiles_view,
+            s3_buckets_view,
             empty_view: EmptyArea::new(),
         })
     }
@@ -162,6 +168,7 @@ impl App {
         // 2. Active view gets first shot — returning Some claims the key
         let view_action = match self.active_view {
             ResourceType::Profiles => self.profiles_view.handle_key_event(key)?,
+            ResourceType::S3Buckets => self.s3_buckets_view.handle_key_event(key)?,
             ResourceType::Empty => self.empty_view.handle_key_event(key)?,
         };
         if let Some(action) = view_action {
@@ -240,6 +247,20 @@ impl App {
                         self.aws_state.profile.clone(),
                         view.label().to_string(),
                     ]);
+                    // Trigger data loading for views that need it
+                    if view == ResourceType::S3Buckets {
+                        self.action_tx.send(Action::LoadS3Buckets)?;
+                    }
+                }
+                Action::LoadS3Buckets => {
+                    let tx = self.action_tx.clone();
+                    let client = self.aws_state.s3_client.clone();
+                    tokio::spawn(async move {
+                        match crate::aws::s3::list_buckets(&client).await {
+                            Ok(buckets) => { let _ = tx.send(Action::S3BucketsLoaded(buckets)); }
+                            Err(e) => { let _ = tx.send(Action::S3BucketsError(e.to_string())); }
+                        }
+                    });
                 }
                 Action::ProfileSelected {
                     ref name,
@@ -266,6 +287,7 @@ impl App {
             // ── Stage 3: Only the active view receives the action ──
             let view_result = match self.active_view {
                 ResourceType::Profiles => self.profiles_view.update(action.clone()),
+                ResourceType::S3Buckets => self.s3_buckets_view.update(action.clone()),
                 ResourceType::Empty => self.empty_view.update(action.clone()),
             };
             if let Some(follow_up) = view_result? {
@@ -329,6 +351,7 @@ impl App {
             // Active view
             let view_result = match self.active_view {
                 ResourceType::Profiles => self.profiles_view.draw(frame, layout[2]),
+                ResourceType::S3Buckets => self.s3_buckets_view.draw(frame, layout[2]),
                 ResourceType::Empty => self.empty_view.draw(frame, layout[2]),
             };
             if let Err(e) = view_result {

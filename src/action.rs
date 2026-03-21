@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use strum::Display;
 
-use crate::{aws::profiles::ProfileInfo, resource_selector::ResourceType};
+use crate::{aws::{profiles::ProfileInfo, s3::BucketInfo}, resource_selector::ResourceType};
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Action {
@@ -33,4 +33,9 @@ pub enum Action {
         name: String,
         region: Option<String>,
     },
+    // S3
+    LoadS3Buckets,
+    #[serde(skip)]
+    S3BucketsLoaded(Vec<BucketInfo>),
+    S3BucketsError(String),
 }
