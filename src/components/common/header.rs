@@ -14,9 +14,9 @@ use crate::{
 pub struct Header {
     profile: String,
     region: String,
-    account: String,
     // Context-dependent actions shown in the header
     context_actions: Vec<(String, String)>, // (label, key)
+    global_actions: Vec<(String, String)>,  // (label, key)
     fps_counter: FpsCounter,
 }
 
@@ -25,8 +25,12 @@ impl Default for Header {
         Self {
             profile: "default".into(),
             region: "-".into(),
-            account: "-".into(),
             context_actions: Vec::new(),
+            global_actions: vec![
+                ("<:>".to_string(), "Resources".to_string()),
+                ("<ESC>".to_string(), "Back".to_string()),
+                ("<q>".to_string(), "Quit".to_string()),
+            ],
             fps_counter: FpsCounter::default(),
         }
     }
@@ -49,6 +53,7 @@ impl Header {
         self.region = region.to_string();
     }
 
+    #[allow(unused)]
     pub fn set_context_actions(&mut self, actions: Vec<(String, String)>) {
         self.context_actions = actions;
     }
@@ -67,10 +72,6 @@ impl Header {
             Line::from(vec![
                 Span::styled("region  ", label_style),
                 Span::styled(self.region.as_str(), value_style),
-            ]),
-            Line::from(vec![
-                Span::styled("account ", label_style),
-                Span::styled(self.account.as_str(), value_style),
             ]),
         ]
     }
@@ -112,10 +113,11 @@ impl Component for Header {
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> color_eyre::Result<()> {
         let columns = Layout::horizontal([
-            Constraint::Percentage(25), // info
-            Constraint::Percentage(25), // actions col 1
-            Constraint::Percentage(25), // actions col 2
-            Constraint::Percentage(25), // logo
+            Constraint::Percentage(20), // info
+            Constraint::Percentage(20), // actions col 1
+            Constraint::Percentage(20), // actions col 2
+            Constraint::Percentage(20), // global actions
+            Constraint::Percentage(20), // logo
         ])
         .split(area);
 
@@ -123,16 +125,20 @@ impl Component for Header {
         let info_lines = self.render_info_column();
         frame.render_widget(Paragraph::new(info_lines), columns[0]);
 
-        // Actions column 1 (first 3 actions)
-        let col1_lines = Self::render_actions_column(&self.context_actions, 0, 3);
+        // Actions column 1 (first 4 actions)
+        let col1_lines = Self::render_actions_column(&self.context_actions, 0, 4);
         frame.render_widget(Paragraph::new(col1_lines), columns[1]);
 
-        // Actions column 2 (next 3 actions)
-        let col2_lines = Self::render_actions_column(&self.context_actions, 3, 3);
+        // Actions column 2 (next 4 actions)
+        let col2_lines = Self::render_actions_column(&self.context_actions, 4, 4);
         frame.render_widget(Paragraph::new(col2_lines), columns[2]);
 
+        // Global actions column
+        let col3_lines = Self::render_actions_column(&self.global_actions, 0, 4);
+        frame.render_widget(Paragraph::new(col3_lines), columns[3]);
+
         // Logo column: logo at top, FPS at bottom
-        let logo_col = columns[3];
+        let logo_col = columns[4];
         let logo_rows = Layout::vertical([
             Constraint::Min(1),    // logo
             Constraint::Length(1), // fps

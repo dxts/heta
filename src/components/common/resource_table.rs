@@ -28,6 +28,7 @@ pub struct ResourceTable<T> {
     loading: bool,
 }
 
+#[allow(unused)]
 impl<T> ResourceTable<T> {
     pub fn new(title: impl Into<String>, columns: Vec<ColumnDef<T>>) -> Self {
         Self {
