@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use strum::Display;
 
 use crate::{
-    components::{profiles::ProfileInfo, s3_buckets::BucketInfo},
-    resource_selector::ResourceType,
+    components::{profiles::ProfileInfo, s3_buckets::BucketInfo, s3_objects::ObjectInfo},
+    page::Page,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
@@ -22,7 +22,7 @@ pub enum Action {
     CloseBar,
     SubmitCommand(String),
     // Navigation
-    SwitchView(ResourceType),
+    SwitchPage(Page),
     // Profiles
     LoadProfiles,
     #[serde(skip)]
@@ -31,7 +31,6 @@ pub enum Action {
     SelectNext,
     SelectPrevious,
     Confirm,
-    #[serde(skip)]
     ProfileSelected {
         name: String,
         region: Option<String>,
@@ -41,4 +40,11 @@ pub enum Action {
     #[serde(skip)]
     S3BucketsLoaded(Vec<BucketInfo>),
     S3BucketsError(String),
+    // S3 Bucket
+    LoadS3Objects {
+        bucket_name: String,
+    },
+    #[serde(skip)]
+    S3ObjectsLoaded(Vec<ObjectInfo>),
+    S3ObjectsError(String),
 }

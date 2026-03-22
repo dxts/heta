@@ -17,9 +17,10 @@ use crate::{
         },
         profiles::ProfilesList,
         s3_buckets::S3BucketsList,
+        s3_objects::S3ObjectsList,
     },
     config::Config,
-    resource_selector::ResourceType,
+    page::Page,
     tui::{Event, Tui},
 };
 
@@ -48,11 +49,12 @@ pub struct App {
     command_bar: CommandBar,
     breadcrumb: Breadcrumb,
 
-    // ── Views: only one is active at a time ──
-    active_view: ResourceType,
-    profiles_view: ProfilesList,
-    s3_buckets_view: S3BucketsList,
-    empty_view: EmptyArea,
+    // ── Page: only one is active at a time ──
+    active_page: Page,
+    profiles_page: ProfilesList,
+    s3_buckets_page: S3BucketsList,
+    s3_objects_page: S3ObjectsList,
+    empty_page: EmptyArea,
 }
 
 /// Input mode determines which keybinding set is active and whether
@@ -75,11 +77,14 @@ impl App {
 
         let header = Header::new(&aws_state.profile, aws_state.region());
 
-        let mut profiles_view = ProfilesList::default();
-        profiles_view.register_action_handler(action_tx.clone())?;
+        let mut profiles_page = ProfilesList::default();
+        profiles_page.register_action_handler(action_tx.clone())?;
 
-        let mut s3_buckets_view = S3BucketsList::new(aws_state.s3_client.clone());
-        s3_buckets_view.register_action_handler(action_tx.clone())?;
+        let mut s3_buckets_page = S3BucketsList::new(aws_state.s3_client.clone());
+        s3_buckets_page.register_action_handler(action_tx.clone())?;
+
+        let mut s3_objects_page = S3ObjectsList::new(aws_state.s3_client.clone());
+        s3_objects_page.register_action_handler(action_tx.clone())?;
 
         Ok(Self {
             tick_rate,
@@ -95,11 +100,65 @@ impl App {
             header,
             command_bar: CommandBar::default(),
             breadcrumb: Breadcrumb::default(),
-            active_view: ResourceType::Profiles,
-            profiles_view,
-            s3_buckets_view,
-            empty_view: EmptyArea::new(),
+            active_page: Page::Profiles,
+            profiles_page,
+            s3_buckets_page,
+            s3_objects_page,
+            empty_page: EmptyArea::new(),
         })
+    }
+
+    /// Instead of repeatedly matching on `self.active_page` and dispatching
+    /// the Component lifecycle calls to the correct component from App state
+    ///
+    /// This function will allow us to do:
+    /// ```
+    /// // In handle_key_event:
+    /// let view_action = self.active_page_component().handle_key_event(key)?;
+    ///
+    /// // In handle_actions stage 3:
+    /// let view_result = self.active_page_component().update(action.clone());
+    ///
+    /// // In render:
+    /// let view_result = self.active_page_component().draw(frame, layout[2]);
+    /// ```
+    ///
+    /// In the future, if you want to remove the dynamic dispatch and make it static
+    /// this can be replaced by an enum wrapper pattern:
+    /// ```
+    /// enum PageComponent {
+    ///     Profiles(ProfilesList),
+    ///     S3Buckets(S3BucketsList),
+    ///     S3Objects(S3ObjectsList),
+    ///     Empty(EmptyArea),
+    /// }
+    ///
+    /// impl Component for PageComponent {
+    ///     fn handle_key_event(&mut self, key: KeyEvent) -> color_eyre::Result<Option<Action>> {
+    ///         match self {
+    ///             Self::Profiles(c) => c.handle_key_event(key),
+    ///             Self::S3Buckets(c) => c.handle_key_event(key),
+    ///             Self::S3Objects(c) => c.handle_key_event(key),
+    ///             Self::Empty(c) => c.handle_key_event(key),
+    ///         }
+    ///     }
+    ///     // ... same delegation for update, draw, etc.
+    /// }
+    /// ```
+    ///
+    /// We can use the `enum_dispatch` crate to auto-generate this boilerplate:
+    /// ```
+    /// #[enum_dispatch(Component)]
+    /// enum PageComponent { Profiles(ProfilesList), S3Buckets(S3BucketsList), ... }
+    /// ```
+    ///
+    fn active_page_component(&mut self) -> &mut dyn Component {
+        match self.active_page {
+            Page::Profiles => &mut self.profiles_page,
+            Page::S3Buckets => &mut self.s3_buckets_page,
+            Page::S3Objects { .. } => &mut self.s3_objects_page,
+            Page::Empty => &mut self.empty_page,
+        }
     }
 
     /// The main event loop. Each iteration:
@@ -165,11 +224,7 @@ impl App {
         }
 
         // 2. Active view gets first shot — returning Some claims the key
-        let view_action = match self.active_view {
-            ResourceType::Profiles => self.profiles_view.handle_key_event(key)?,
-            ResourceType::S3Buckets => self.s3_buckets_view.handle_key_event(key)?,
-            ResourceType::Empty => self.empty_view.handle_key_event(key)?,
-        };
+        let view_action = self.active_page_component().handle_key_event(key)?;
         if let Some(action) = view_action {
             action_tx.send(action)?;
             return Ok(());
@@ -213,7 +268,7 @@ impl App {
             }
 
             // ── Stage 1: App-level state transitions ──
-            match action {
+            match action.clone() {
                 Action::Tick => {
                     self.last_tick_key_events.drain(..);
                 }
@@ -227,25 +282,28 @@ impl App {
                 Action::CloseBar => self.mode = Mode::Normal,
                 Action::SubmitCommand(ref cmd) => {
                     self.mode = Mode::Normal;
-                    if let Some(view) = ResourceType::from_command(cmd) {
-                        self.action_tx.send(Action::SwitchView(view))?;
+                    if let Some(view) = Page::from_command(cmd) {
+                        self.action_tx.send(Action::SwitchPage(view))?;
                     } else {
                         self.action_tx
                             .send(Action::Error(format!("Unknown command: {cmd}")))?;
                     }
                 }
-                Action::SwitchView(view) => {
-                    self.active_view = view;
-                    self.breadcrumb.set_segments(vec![
-                        self.aws_state.profile.clone(),
-                        view.label().to_string(),
-                    ]);
+                Action::SwitchPage(page) => {
+                    self.breadcrumb
+                        .set_segments(vec![self.aws_state.profile.clone(), page.label()]);
                     // Trigger the data loading action for the view
-                    match view {
-                        ResourceType::Profiles => self.action_tx.send(Action::LoadProfiles)?,
-                        ResourceType::S3Buckets => self.action_tx.send(Action::LoadS3Buckets)?,
-                        ResourceType::Empty => (),
+                    match page {
+                        Page::Profiles => self.action_tx.send(Action::LoadProfiles)?,
+                        Page::S3Buckets => self.action_tx.send(Action::LoadS3Buckets)?,
+                        Page::S3Objects { ref bucket_name } => {
+                            self.action_tx.send(Action::LoadS3Objects {
+                                bucket_name: bucket_name.clone(),
+                            })?
+                        }
+                        Page::Empty => (),
                     }
+                    self.active_page = page;
                 }
                 Action::ProfileSelected {
                     ref name,
@@ -257,9 +315,7 @@ impl App {
                     self.header.set_profile(name);
                     self.header
                         .set_region(self.aws_state.region().unwrap_or("-"));
-                    self.breadcrumb
-                        .set_segments(vec![name.clone(), "home".into()]);
-                    self.active_view = ResourceType::Empty;
+                    self.active_page = Page::Empty;
                 }
                 _ => {}
             }
@@ -270,11 +326,7 @@ impl App {
             self.breadcrumb.update(action.clone())?;
 
             // ── Stage 3: Only the active view receives the action ──
-            let view_result = match self.active_view {
-                ResourceType::Profiles => self.profiles_view.update(action.clone()),
-                ResourceType::S3Buckets => self.s3_buckets_view.update(action.clone()),
-                ResourceType::Empty => self.empty_view.update(action.clone()),
-            };
+            let view_result = self.active_page_component().update(action.clone());
             if let Some(follow_up) = view_result? {
                 self.action_tx.send(follow_up)?;
             }
@@ -332,11 +384,7 @@ impl App {
             }
 
             // Active view
-            let view_result = match self.active_view {
-                ResourceType::Profiles => self.profiles_view.draw(frame, layout[2]),
-                ResourceType::S3Buckets => self.s3_buckets_view.draw(frame, layout[2]),
-                ResourceType::Empty => self.empty_view.draw(frame, layout[2]),
-            };
+            let view_result = self.active_page_component().draw(frame, layout[2]);
             if let Err(e) = view_result {
                 let _ = self
                     .action_tx
