@@ -5,7 +5,6 @@ use crate::app::App;
 
 mod action;
 mod app;
-mod aws;
 mod cli;
 mod components;
 mod config;

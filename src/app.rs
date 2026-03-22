@@ -1,15 +1,18 @@
+use std::sync::Arc;
+
+use aws_config::BehaviorVersion;
+use aws_sdk_s3::Client as S3Client;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     widgets::{Block, Padding},
 };
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
+use tokio::sync::{RwLock, mpsc};
 use tracing::{debug, info};
 
 use crate::{
     action::Action,
-    aws::state::AwsState,
     components::{
         Component,
         common::{
@@ -41,8 +44,13 @@ pub struct App {
     /// Receive side — drained every iteration in `handle_actions`.
     action_rx: mpsc::UnboundedReceiver<Action>,
 
-    /// Shared AWS SDK state: config, clients, current profile/region.
-    aws_state: AwsState,
+    // ── AWS state ──
+    sdk_config: aws_config::SdkConfig,
+    /// Shared S3 client — wrapped in Arc<RwLock> so components can hold
+    /// a handle that always points to the current client, even after
+    /// profile switches.
+    s3_client: Arc<RwLock<S3Client>>,
+    profile: String,
 
     // ── Chrome: always-visible layout components ──
     header: Header,
@@ -73,17 +81,22 @@ impl App {
     /// Called once from `main` before entering the event loop.
     pub async fn new(tick_rate: f64, frame_rate: f64) -> color_eyre::Result<Self> {
         let (action_tx, action_rx) = mpsc::unbounded_channel();
-        let aws_state = AwsState::init().await?;
 
-        let header = Header::new(&aws_state.profile, aws_state.region());
+        // ── AWS init ──
+        let sdk_config = aws_config::load_defaults(BehaviorVersion::latest()).await;
+        let s3_client = Arc::new(RwLock::new(S3Client::new(&sdk_config)));
+        let profile = "default".to_string();
+
+        let region = sdk_config.region().map(|r| r.as_ref());
+        let header = Header::new(&profile, region);
 
         let mut profiles_page = ProfilesList::default();
         profiles_page.register_action_handler(action_tx.clone())?;
 
-        let mut s3_buckets_page = S3BucketsList::new(aws_state.s3_client.clone());
+        let mut s3_buckets_page = S3BucketsList::new(s3_client.clone());
         s3_buckets_page.register_action_handler(action_tx.clone())?;
 
-        let mut s3_objects_page = S3ObjectsList::new(aws_state.s3_client.clone());
+        let mut s3_objects_page = S3ObjectsList::new(s3_client.clone());
         s3_objects_page.register_action_handler(action_tx.clone())?;
 
         Ok(Self {
@@ -96,7 +109,9 @@ impl App {
             last_tick_key_events: Vec::new(),
             action_tx,
             action_rx,
-            aws_state,
+            sdk_config,
+            s3_client,
+            profile,
             header,
             command_bar: CommandBar::default(),
             breadcrumb: Breadcrumb::default(),
@@ -108,50 +123,30 @@ impl App {
         })
     }
 
-    /// Instead of repeatedly matching on `self.active_page` and dispatching
-    /// the Component lifecycle calls to the correct component from App state
-    ///
-    /// This function will allow us to do:
-    /// ```
-    /// // In handle_key_event:
-    /// let view_action = self.active_page_component().handle_key_event(key)?;
-    ///
-    /// // In handle_actions stage 3:
-    /// let view_result = self.active_page_component().update(action.clone());
-    ///
-    /// // In render:
-    /// let view_result = self.active_page_component().draw(frame, layout[2]);
-    /// ```
-    ///
-    /// In the future, if you want to remove the dynamic dispatch and make it static
-    /// this can be replaced by an enum wrapper pattern:
-    /// ```
-    /// enum PageComponent {
-    ///     Profiles(ProfilesList),
-    ///     S3Buckets(S3BucketsList),
-    ///     S3Objects(S3ObjectsList),
-    ///     Empty(EmptyArea),
-    /// }
-    ///
-    /// impl Component for PageComponent {
-    ///     fn handle_key_event(&mut self, key: KeyEvent) -> color_eyre::Result<Option<Action>> {
-    ///         match self {
-    ///             Self::Profiles(c) => c.handle_key_event(key),
-    ///             Self::S3Buckets(c) => c.handle_key_event(key),
-    ///             Self::S3Objects(c) => c.handle_key_event(key),
-    ///             Self::Empty(c) => c.handle_key_event(key),
-    ///         }
-    ///     }
-    ///     // ... same delegation for update, draw, etc.
-    /// }
-    /// ```
-    ///
-    /// We can use the `enum_dispatch` crate to auto-generate this boilerplate:
-    /// ```
-    /// #[enum_dispatch(Component)]
-    /// enum PageComponent { Profiles(ProfilesList), S3Buckets(S3BucketsList), ... }
-    /// ```
-    ///
+    /// Reload AWS SDK config and clients for a new profile/region.
+    /// Swaps the S3 client behind the shared lock so all components
+    /// see the new client on their next API call.
+    async fn reload_for_profile(
+        &mut self,
+        profile: &str,
+        region: Option<&str>,
+    ) -> color_eyre::Result<()> {
+        let mut loader = aws_config::defaults(BehaviorVersion::latest()).profile_name(profile);
+        if let Some(r) = region {
+            loader = loader.region(aws_config::Region::new(r.to_string()));
+        }
+        self.sdk_config = loader.load().await;
+        *self.s3_client.write().await = S3Client::new(&self.sdk_config);
+        self.profile = profile.to_string();
+        Ok(())
+    }
+
+    fn region(&self) -> Option<&str> {
+        self.sdk_config.region().map(|r| r.as_ref())
+    }
+
+    /// Returns a mutable reference to the currently active page component,
+    /// using dynamic dispatch to avoid repeated match blocks at each call site.
     fn active_page_component(&mut self) -> &mut dyn Component {
         match self.active_page {
             Page::Profiles => &mut self.profiles_page,
@@ -291,8 +286,7 @@ impl App {
                 }
                 Action::SwitchPage(page) => {
                     self.breadcrumb
-                        .set_segments(vec![self.aws_state.profile.clone(), page.label()]);
-                    // Trigger the data loading action for the view
+                        .set_segments(vec![self.profile.clone(), page.label()]);
                     match page {
                         Page::Profiles => self.action_tx.send(Action::LoadProfiles)?,
                         Page::S3Buckets => self.action_tx.send(Action::LoadS3Buckets)?,
@@ -309,12 +303,10 @@ impl App {
                     ref name,
                     ref region,
                 } => {
-                    self.aws_state
-                        .reload_for_profile(name, region.as_deref())
-                        .await?;
+                    self.reload_for_profile(name, region.as_deref()).await?;
+                    let current_region = self.region().unwrap_or("-").to_string();
                     self.header.set_profile(name);
-                    self.header
-                        .set_region(self.aws_state.region().unwrap_or("-"));
+                    self.header.set_region(&current_region);
                     self.active_page = Page::Empty;
                 }
                 _ => {}
