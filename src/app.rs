@@ -1,8 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Layout, Rect},
-    style::{Color, Style},
-    widgets::{Block, Borders},
+    widgets::{Block, Padding},
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
@@ -291,32 +290,30 @@ impl App {
 
     /// Draws one frame. Layout is a vertical stack:
     ///   ┌─────────────────────┐
-    ///   │ Header (6 lines)    │ profile/region + actions + logo + fps
+    ///   │ Header (5 lines)    │ profile/region + actions + logo + fps
     ///   ├─────────────────────┤
-    ///   │ Command bar (0 or 1)│ shown only in Command/Filter mode
+    ///   │ Command bar (0 or 3)│ shown only in Command/Filter mode
     ///   ├─────────────────────┤
     ///   │ Resource area (fill)│ delegates to the active view
     ///   ├─────────────────────┤
-    ///   │ Breadcrumb (2 line) │ navigation trail
+    ///   │ Breadcrumb (1 line) │ navigation trail
     ///   └─────────────────────┘
     fn render(&mut self, tui: &mut Tui) -> color_eyre::Result<()> {
         tui.draw(|frame| {
             let area = frame.area();
 
-            let bar_height = if self.command_bar.is_active() { 1 } else { 0 };
+            let bar_height = if self.command_bar.is_active() { 3 } else { 0 };
 
             let layout = Layout::vertical([
-                Constraint::Length(6),
+                Constraint::Length(5),
                 Constraint::Length(bar_height),
                 Constraint::Min(1),
-                Constraint::Length(2),
+                Constraint::Length(1),
             ])
             .split(area);
 
             // Header
-            let header_block = Block::default()
-                .borders(Borders::BOTTOM)
-                .border_style(Style::default().fg(Color::DarkGray));
+            let header_block = Block::default().padding(Padding::horizontal(1));
             let header_inner = header_block.inner(layout[0]);
             frame.render_widget(header_block, layout[0]);
             if let Err(e) = self.header.draw(frame, header_inner) {
@@ -347,9 +344,7 @@ impl App {
             }
 
             // Breadcrumb
-            let breadcrumb_block = Block::default()
-                .borders(Borders::TOP)
-                .border_style(Style::default().fg(Color::DarkGray));
+            let breadcrumb_block = Block::default().padding(Padding::horizontal(1));
             let breadcrumb_inner = breadcrumb_block.inner(layout[3]);
             frame.render_widget(breadcrumb_block, layout[3]);
             if let Err(e) = self.breadcrumb.draw(frame, breadcrumb_inner) {

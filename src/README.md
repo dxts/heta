@@ -48,9 +48,9 @@ KeyEvent
 
 ```
 ┌─────────────────────────┐
-│ Header (6 lines)        │  profile/region/account + context actions + logo + fps
+│ Header (5 lines)        │  profile/region/account + context actions + logo + fps
 ├─────────────────────────┤
-│ Command bar (0 or 1)    │  visible only in Command mode
+│ Command bar (0 or 3)    │  visible only in Command mode
 ├─────────────────────────┤
 │ Resource area (fill)    │  delegates to active view (profiles, s3, lambda, etc.)
 ├─────────────────────────┤

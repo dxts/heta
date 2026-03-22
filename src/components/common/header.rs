@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Modifier, Style, Stylize},
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -97,15 +97,9 @@ impl Header {
     }
 
     fn render_logo() -> Vec<Line<'static>> {
-        let logo_style = Style::default()
-            .fg(Color::Cyan)
-            .add_modifier(Modifier::BOLD);
         vec![
-            Line::from(Span::styled("HETA", logo_style)),
-            Line::from(Span::styled(
-                "aws tui",
-                Style::default().fg(Color::DarkGray),
-            )),
+            Line::from("  HETA  ".white().on_dark_gray().bold()),
+            Line::from("for aws ".dark_gray().italic()),
         ]
     }
 }

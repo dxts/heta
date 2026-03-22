@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Style},
+    style::Stylize,
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -33,15 +33,13 @@ impl Component for Breadcrumb {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> color_eyre::Result<()> {
-        let separator_style = Style::default().fg(Color::DarkGray);
-        let segment_style = Style::default().fg(Color::Cyan);
-
         let mut spans: Vec<Span> = Vec::new();
+
         for (i, segment) in self.segments.iter().enumerate() {
             if i > 0 {
-                spans.push(Span::styled(" › ", separator_style));
+                spans.push(" > ".dark_gray());
             }
-            spans.push(Span::styled(segment.as_str(), segment_style));
+            spans.push(format!(" {} ", segment.as_str()).white().on_dark_gray());
         }
 
         frame.render_widget(Paragraph::new(Line::from(spans)), area);

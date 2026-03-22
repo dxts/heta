@@ -4,7 +4,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Block, Paragraph},
 };
 use tui_input::{Input, backend::crossterm::EventHandler};
 
@@ -96,19 +96,22 @@ impl Component for CommandBar {
             return Ok(());
         }
 
-        let prefix_style = Style::default().fg(Color::Yellow);
-        let input_style = Style::default().fg(Color::White);
+        let prefix_style = Style::default().fg(Color::DarkGray);
+        let input_style = Style::default().fg(Color::DarkGray);
 
         let line = Line::from(vec![
             Span::styled(self.prefix(), prefix_style),
             Span::styled(self.input.value(), input_style),
         ]);
 
-        frame.render_widget(Paragraph::new(line), area);
+        let block = Block::bordered().border_style(Style::default().fg(Color::DarkGray));
+        frame.render_widget(Paragraph::new(line).block(block), area);
 
-        // Position cursor after the prefix + input
-        let cursor_x = area.x + self.prefix().len() as u16 + self.input.cursor() as u16;
-        let cursor_y = area.y;
+        // Position cursor after the border + prefix + input
+        let cursor_x = area.x + 1 + self.prefix().len() as u16 + self.input.visual_cursor() as u16;
+        // Position after the border
+        let cursor_y = area.y + 1;
+
         frame.set_cursor_position((cursor_x, cursor_y));
 
         Ok(())
