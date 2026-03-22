@@ -1,3 +1,5 @@
+use aws_runtime::env_config::file::EnvConfigFiles;
+use aws_types::os_shim_internal::{Env, Fs};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
@@ -7,7 +9,7 @@ use ratatui::{
 };
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::{action::Action, aws::profiles::ProfileInfo, components::Component};
+use crate::{action::Action, components::Component};
 
 pub struct ProfilesList {
     command_tx: Option<UnboundedSender<Action>>,
@@ -55,6 +57,25 @@ impl ProfilesList {
             region: p.region.clone(),
         })
     }
+
+    /// Spawns an async task to fetch profiles list. Results flow back
+    /// as `ProfilesLoaded` or `ProfilesLoadError` through the action channel.
+    fn spawn_load(&self) {
+        let Some(tx) = self.command_tx.clone() else {
+            return;
+        };
+
+        tokio::spawn(async move {
+            match list_profiles().await {
+                Ok(profiles) => {
+                    let _ = tx.send(Action::ProfilesLoaded(profiles));
+                }
+                Err(e) => {
+                    let _ = tx.send(Action::ProfilesLoadError(e.to_string()));
+                }
+            }
+        });
+    }
 }
 
 impl Component for ProfilesList {
@@ -62,9 +83,9 @@ impl Component for ProfilesList {
         self.command_tx = Some(tx.clone());
 
         tokio::spawn(async move {
-            match crate::aws::profiles::list_profiles().await {
+            match list_profiles().await {
                 Ok(profiles) => {
-                    let _ = tx.send(Action::ProfilesLoaded(profiles.to_vec()));
+                    let _ = tx.send(Action::ProfilesLoaded(profiles));
                 }
                 Err(e) => {
                     let _ = tx.send(Action::Error(format!("Failed to load profiles: {e}")));
@@ -92,6 +113,11 @@ impl Component for ProfilesList {
 
     fn update(&mut self, action: Action) -> color_eyre::Result<Option<Action>> {
         match action {
+            Action::LoadProfiles => {
+                self.loading = true;
+                self.profiles.clear();
+                self.spawn_load();
+            }
             Action::ProfilesLoaded(profiles) => {
                 self.profiles = profiles;
                 self.loading = false;
@@ -168,4 +194,35 @@ impl Component for ProfilesList {
 
         Ok(())
     }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfileInfo {
+    pub name: String,
+    pub region: Option<String>,
+}
+
+pub async fn list_profiles() -> color_eyre::Result<Vec<ProfileInfo>> {
+    let env_config =
+        aws_config::profile::load(&Fs::real(), &Env::real(), &EnvConfigFiles::default(), None)
+            .await?;
+
+    let mut profiles: Vec<ProfileInfo> = env_config
+        .profiles()
+        .map(|name| {
+            let profile = env_config.get_profile(name);
+
+            ProfileInfo {
+                name: name.to_string(),
+                region: profile.and_then(|p| p.get("region")).map(|s| s.to_string()),
+            }
+        })
+        .collect();
+
+    profiles.sort_by(|a, b| a.name.cmp(&b.name));
+
+    Ok(profiles)
 }

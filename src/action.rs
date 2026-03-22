@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use strum::Display;
 
-use crate::{aws::{profiles::ProfileInfo, s3::BucketInfo}, resource_selector::ResourceType};
+use crate::{
+    components::{profiles::ProfileInfo, s3_buckets::BucketInfo},
+    resource_selector::ResourceType,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Action {
@@ -16,15 +19,15 @@ pub enum Action {
     Help,
     // Command bar
     OpenCommandBar,
-    OpenFilterBar,
     CloseBar,
     SubmitCommand(String),
-    SubmitFilter(String),
     // Navigation
     SwitchView(ResourceType),
     // Profiles
+    LoadProfiles,
     #[serde(skip)]
     ProfilesLoaded(Vec<ProfileInfo>),
+    ProfilesLoadError(String),
     SelectNext,
     SelectPrevious,
     Confirm,

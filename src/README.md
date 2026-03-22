@@ -40,8 +40,7 @@ KeyEvent
   │
   ├─ 2. Active view                  j/k/Enter etc. — view-specific bindings
   │
-  └─ 3. Global bindings              : → OpenCommandBar
-                                      / → OpenFilterBar
+  └─ 3. Global bindings               : → OpenCommandBar
                                       config keymaps (q → Quit, Ctrl-c, etc.)
 ```
 
@@ -49,9 +48,9 @@ KeyEvent
 
 ```
 ┌─────────────────────────┐
-│ Header (5 lines)        │  profile/region/account + context actions + logo + fps
+│ Header (6 lines)        │  profile/region/account + context actions + logo + fps
 ├─────────────────────────┤
-│ Command bar (0 or 1)    │  visible only in Command/Filter mode
+│ Command bar (0 or 1)    │  visible only in Command mode
 ├─────────────────────────┤
 │ Resource area (fill)    │  delegates to active view (profiles, s3, lambda, etc.)
 ├─────────────────────────┤

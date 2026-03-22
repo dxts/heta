@@ -79,7 +79,7 @@ impl App {
         let mut profiles_view = ProfilesList::default();
         profiles_view.register_action_handler(action_tx.clone())?;
 
-        let mut s3_buckets_view = S3BucketsList::default();
+        let mut s3_buckets_view = S3BucketsList::new(aws_state.s3_client.clone());
         s3_buckets_view.register_action_handler(action_tx.clone())?;
 
         Ok(Self {
@@ -181,9 +181,6 @@ impl App {
             KeyCode::Char(':') => {
                 action_tx.send(Action::OpenCommandBar)?;
             }
-            KeyCode::Char('/') => {
-                action_tx.send(Action::OpenFilterBar)?;
-            }
             _ => {
                 if let Some(keymap) = self.config.keybindings.0.get(&self.mode) {
                     match keymap.get(&vec![key]) {
@@ -228,10 +225,7 @@ impl App {
                 Action::Resize(w, h) => self.handle_resize(tui, w, h)?,
                 Action::Render => self.render(tui)?,
                 Action::OpenCommandBar => self.mode = Mode::Command,
-                Action::OpenFilterBar => self.mode = Mode::Filter,
-                Action::CloseBar | Action::SubmitFilter(_) => {
-                    self.mode = Mode::Normal;
-                }
+                Action::CloseBar => self.mode = Mode::Normal,
                 Action::SubmitCommand(ref cmd) => {
                     self.mode = Mode::Normal;
                     if let Some(view) = ResourceType::from_command(cmd) {
@@ -247,20 +241,12 @@ impl App {
                         self.aws_state.profile.clone(),
                         view.label().to_string(),
                     ]);
-                    // Trigger data loading for views that need it
-                    if view == ResourceType::S3Buckets {
-                        self.action_tx.send(Action::LoadS3Buckets)?;
+                    // Trigger the data loading action for the view
+                    match view {
+                        ResourceType::Profiles => self.action_tx.send(Action::LoadProfiles)?,
+                        ResourceType::S3Buckets => self.action_tx.send(Action::LoadS3Buckets)?,
+                        ResourceType::Empty => (),
                     }
-                }
-                Action::LoadS3Buckets => {
-                    let tx = self.action_tx.clone();
-                    let client = self.aws_state.s3_client.clone();
-                    tokio::spawn(async move {
-                        match crate::aws::s3::list_buckets(&client).await {
-                            Ok(buckets) => { let _ = tx.send(Action::S3BucketsLoaded(buckets)); }
-                            Err(e) => { let _ = tx.send(Action::S3BucketsError(e.to_string())); }
-                        }
-                    });
                 }
                 Action::ProfileSelected {
                     ref name,
@@ -305,13 +291,13 @@ impl App {
 
     /// Draws one frame. Layout is a vertical stack:
     ///   ┌─────────────────────┐
-    ///   │ Header (5 lines)    │ profile/region + actions + logo + fps
+    ///   │ Header (6 lines)    │ profile/region + actions + logo + fps
     ///   ├─────────────────────┤
     ///   │ Command bar (0 or 1)│ shown only in Command/Filter mode
     ///   ├─────────────────────┤
     ///   │ Resource area (fill)│ delegates to the active view
     ///   ├─────────────────────┤
-    ///   │ Breadcrumb (1 line) │ navigation trail
+    ///   │ Breadcrumb (2 line) │ navigation trail
     ///   └─────────────────────┘
     fn render(&mut self, tui: &mut Tui) -> color_eyre::Result<()> {
         tui.draw(|frame| {
@@ -320,10 +306,10 @@ impl App {
             let bar_height = if self.command_bar.is_active() { 1 } else { 0 };
 
             let layout = Layout::vertical([
-                Constraint::Length(5),
+                Constraint::Length(6),
                 Constraint::Length(bar_height),
                 Constraint::Min(1),
-                Constraint::Length(1),
+                Constraint::Length(2),
             ])
             .split(area);
 

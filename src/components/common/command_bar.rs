@@ -14,7 +14,6 @@ use crate::components::Component;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BarMode {
     Command,
-    Filter,
     Hidden,
 }
 
@@ -40,7 +39,6 @@ impl CommandBar {
     fn prefix(&self) -> &str {
         match self.mode {
             BarMode::Command => ":",
-            BarMode::Filter => "/",
             BarMode::Hidden => "",
         }
     }
@@ -57,7 +55,6 @@ impl CommandBar {
     fn submit(&mut self) -> Option<Action> {
         let action = match self.mode {
             BarMode::Command => Some(Action::SubmitCommand(self.input.value_and_reset())),
-            BarMode::Filter => Some(Action::SubmitFilter(self.input.value_and_reset())),
             BarMode::Hidden => None,
         };
         self.close();
@@ -88,7 +85,6 @@ impl Component for CommandBar {
     fn update(&mut self, action: Action) -> color_eyre::Result<Option<Action>> {
         match action {
             Action::OpenCommandBar => self.open(BarMode::Command),
-            Action::OpenFilterBar => self.open(BarMode::Filter),
             Action::CloseBar => self.close(),
             _ => {}
         }

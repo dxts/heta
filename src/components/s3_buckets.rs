@@ -1,3 +1,4 @@
+use aws_sdk_s3::Client as S3Client;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
@@ -7,27 +8,27 @@ use ratatui::{
 };
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::{action::Action, aws::s3::BucketInfo, components::Component};
+use crate::{action::Action, components::Component};
 
 pub struct S3BucketsList {
     command_tx: Option<UnboundedSender<Action>>,
+    client: S3Client,
     buckets: Vec<BucketInfo>,
     table_state: TableState,
     loading: bool,
 }
 
-impl Default for S3BucketsList {
-    fn default() -> Self {
+impl S3BucketsList {
+    pub fn new(client: S3Client) -> Self {
         Self {
             command_tx: None,
+            client,
             buckets: Vec::new(),
             table_state: TableState::default().with_selected(Some(0)),
             loading: true,
         }
     }
-}
 
-impl S3BucketsList {
     fn select_next(&mut self) {
         if self.buckets.is_empty() {
             return;
@@ -43,12 +44,24 @@ impl S3BucketsList {
         self.table_state.select(Some(prev));
     }
 
-    /// Triggers an async bucket fetch by sending `LoadS3Buckets` into the action loop.
-    /// The actual API call happens in `App::handle_actions` which has access to `AwsState`.
-    pub fn request_load(&self) {
-        if let Some(tx) = &self.command_tx {
-            let _ = tx.send(Action::LoadS3Buckets);
-        }
+    /// Spawns an async task to fetch bucket list. Results flow back
+    /// as `S3BucketsLoaded` or `S3BucketsError` through the action channel.
+    fn spawn_load(&self) {
+        let Some(tx) = self.command_tx.clone() else {
+            return;
+        };
+
+        let client = self.client.clone();
+        tokio::spawn(async move {
+            match list_buckets(&client).await {
+                Ok(buckets) => {
+                    let _ = tx.send(Action::S3BucketsLoaded(buckets));
+                }
+                Err(e) => {
+                    let _ = tx.send(Action::S3BucketsError(e.to_string()));
+                }
+            }
+        });
     }
 }
 
@@ -79,6 +92,11 @@ impl Component for S3BucketsList {
 
     fn update(&mut self, action: Action) -> color_eyre::Result<Option<Action>> {
         match action {
+            Action::LoadS3Buckets => {
+                self.loading = true;
+                self.buckets.clear();
+                self.spawn_load();
+            }
             Action::S3BucketsLoaded(buckets) => {
                 self.buckets = buckets;
                 self.loading = false;
@@ -139,11 +157,8 @@ impl Component for S3BucketsList {
             .add_modifier(Modifier::BOLD);
         let normal_style = Style::default().fg(Color::Gray);
 
-        let header = Row::new(vec![
-            Cell::from("Bucket"),
-            Cell::from("Created"),
-        ])
-        .style(header_style);
+        let header =
+            Row::new(vec![Cell::from("Bucket"), Cell::from("Created")]).style(header_style);
 
         let rows: Vec<Row> = self
             .buckets
@@ -172,4 +187,34 @@ impl Component for S3BucketsList {
 
         Ok(())
     }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BucketInfo {
+    pub name: String,
+    pub region: Option<String>,
+    pub creation_date: Option<String>,
+}
+
+/// Fetches all S3 buckets visible to the current credentials.
+pub async fn list_buckets(client: &S3Client) -> color_eyre::Result<Vec<BucketInfo>> {
+    let resp = client.list_buckets().send().await?;
+
+    let buckets = resp
+        .buckets()
+        .iter()
+        .map(|b| BucketInfo {
+            name: b.name().unwrap_or("—").to_string(),
+            region: None, // bucket-level region requires a per-bucket HEAD call
+            creation_date: b.creation_date().map(|d| {
+                d.fmt(aws_sdk_s3::primitives::DateTimeFormat::DateTime)
+                    .unwrap_or_default()
+            }),
+        })
+        .collect();
+
+    Ok(buckets)
 }
