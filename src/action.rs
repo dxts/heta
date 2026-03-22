@@ -17,10 +17,9 @@ pub enum Action {
     ClearScreen,
     Error(String),
     Help,
-    // Command bar
-    OpenCommandBar,
-    CloseBar,
-    SubmitCommand(String),
+    // Resource selector
+    OpenResourceSelector,
+    CloseResourceSelector,
     // Navigation
     SwitchPage(Page),
     // Profiles
@@ -28,9 +27,6 @@ pub enum Action {
     #[serde(skip)]
     ProfilesLoaded(Vec<ProfileInfo>),
     ProfilesLoadError(String),
-    SelectNext,
-    SelectPrevious,
-    Confirm,
     ProfileSelected {
         name: String,
         region: Option<String>,

@@ -122,8 +122,6 @@ impl Component for S3ObjectsList {
                 self.table.set_loading(false);
                 tracing::error!("S3 objects list error: {msg}");
             }
-            Action::SelectNext => self.table.select_next(),
-            Action::SelectPrevious => self.table.select_previous(),
             _ => {}
         }
         Ok(None)

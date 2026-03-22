@@ -109,9 +109,6 @@ impl Component for ProfilesList {
             Action::ProfilesLoaded(profiles) => {
                 self.table.set_items(profiles);
             }
-            Action::SelectNext => self.table.select_next(),
-            Action::SelectPrevious => self.table.select_previous(),
-            Action::Confirm => return Ok(self.confirm()),
             _ => {}
         }
         Ok(None)

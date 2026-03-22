@@ -16,7 +16,8 @@ use crate::{
     components::{
         Component,
         common::{
-            breadcrumb::Breadcrumb, command_bar::CommandBar, empty_area::EmptyArea, header::Header,
+            breadcrumb::Breadcrumb, empty_area::EmptyArea, header::Header,
+            resource_selector::ResourceSelector,
         },
         profiles::ProfilesList,
         s3_buckets::S3BucketsList,
@@ -54,7 +55,7 @@ pub struct App {
 
     // ── Chrome: always-visible layout components ──
     header: Header,
-    command_bar: CommandBar,
+    resource_selector: ResourceSelector,
     breadcrumb: Breadcrumb,
 
     // ── Page: only one is active at a time ──
@@ -113,7 +114,7 @@ impl App {
             s3_client,
             profile,
             header,
-            command_bar: CommandBar::default(),
+            resource_selector: ResourceSelector::default(),
             breadcrumb: Breadcrumb::default(),
             active_page: Page::Profiles,
             profiles_page,
@@ -210,9 +211,9 @@ impl App {
     fn handle_key_event(&mut self, key: KeyEvent) -> color_eyre::Result<()> {
         let action_tx = self.action_tx.clone();
 
-        // 1. Command bar captures all input when active
-        if self.command_bar.is_active() {
-            if let Some(action) = self.command_bar.handle_key_event(key)? {
+        // 1. Resource selector captures all input when active
+        if self.resource_selector.is_active() {
+            if let Some(action) = self.resource_selector.handle_key_event(key)? {
                 action_tx.send(action)?;
             }
             return Ok(());
@@ -228,7 +229,7 @@ impl App {
         // 3. Global keys and config-driven keybindings
         match key.code {
             KeyCode::Char(':') => {
-                action_tx.send(Action::OpenCommandBar)?;
+                action_tx.send(Action::OpenResourceSelector)?;
             }
             _ => {
                 if let Some(keymap) = self.config.keybindings.0.get(&self.mode) {
@@ -273,17 +274,8 @@ impl App {
                 Action::ClearScreen => tui.terminal.clear()?,
                 Action::Resize(w, h) => self.handle_resize(tui, w, h)?,
                 Action::Render => self.render(tui)?,
-                Action::OpenCommandBar => self.mode = Mode::Command,
-                Action::CloseBar => self.mode = Mode::Normal,
-                Action::SubmitCommand(ref cmd) => {
-                    self.mode = Mode::Normal;
-                    if let Some(view) = Page::from_command(cmd) {
-                        self.action_tx.send(Action::SwitchPage(view))?;
-                    } else {
-                        self.action_tx
-                            .send(Action::Error(format!("Unknown command: {cmd}")))?;
-                    }
-                }
+                Action::OpenResourceSelector => self.mode = Mode::Command,
+                Action::CloseResourceSelector => self.mode = Mode::Normal,
                 Action::SwitchPage(page) => {
                     self.breadcrumb
                         .set_segments(vec![self.profile.clone(), page.label()]);
@@ -314,7 +306,7 @@ impl App {
 
             // ── Stage 2: Chrome components always see every action ──
             self.header.update(action.clone())?;
-            self.command_bar.update(action.clone())?;
+            self.resource_selector.update(action.clone())?;
             self.breadcrumb.update(action.clone())?;
 
             // ── Stage 3: Only the active view receives the action ──
@@ -336,21 +328,17 @@ impl App {
     ///   ┌─────────────────────┐
     ///   │ Header (5 lines)    │ profile/region + actions + logo + fps
     ///   ├─────────────────────┤
-    ///   │ Command bar (0 or 3)│ shown only in Command/Filter mode
-    ///   ├─────────────────────┤
     ///   │ Resource area (fill)│ delegates to the active view
     ///   ├─────────────────────┤
     ///   │ Breadcrumb (1 line) │ navigation trail
     ///   └─────────────────────┘
+    ///   Resource selector renders as a centered overlay on top when active.
     fn render(&mut self, tui: &mut Tui) -> color_eyre::Result<()> {
         tui.draw(|frame| {
             let area = frame.area();
 
-            let bar_height = if self.command_bar.is_active() { 3 } else { 0 };
-
             let layout = Layout::vertical([
                 Constraint::Length(5),
-                Constraint::Length(bar_height),
                 Constraint::Min(1),
                 Constraint::Length(1),
             ])
@@ -366,17 +354,8 @@ impl App {
                     .send(Action::Error(format!("Header draw error: {e}")));
             }
 
-            // Command/filter bar
-            if self.command_bar.is_active()
-                && let Err(e) = self.command_bar.draw(frame, layout[1])
-            {
-                let _ = self
-                    .action_tx
-                    .send(Action::Error(format!("Bar draw error: {e}")));
-            }
-
             // Active view
-            let view_result = self.active_page_component().draw(frame, layout[2]);
+            let view_result = self.active_page_component().draw(frame, layout[1]);
             if let Err(e) = view_result {
                 let _ = self
                     .action_tx
@@ -385,12 +364,19 @@ impl App {
 
             // Breadcrumb
             let breadcrumb_block = Block::default().padding(Padding::horizontal(1));
-            let breadcrumb_inner = breadcrumb_block.inner(layout[3]);
-            frame.render_widget(breadcrumb_block, layout[3]);
+            let breadcrumb_inner = breadcrumb_block.inner(layout[2]);
+            frame.render_widget(breadcrumb_block, layout[2]);
             if let Err(e) = self.breadcrumb.draw(frame, breadcrumb_inner) {
                 let _ = self
                     .action_tx
                     .send(Action::Error(format!("Breadcrumb draw error: {e}")));
+            }
+
+            // Resource selector overlay (renders on top when active)
+            if let Err(e) = self.resource_selector.draw(frame, area) {
+                let _ = self
+                    .action_tx
+                    .send(Action::Error(format!("Resource selector draw error: {e}")));
             }
         })?;
         Ok(())
