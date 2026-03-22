@@ -38,15 +38,15 @@ pub struct App {
     mode: Mode,
     /// Buffer for multi-key combos (e.g. `gg`). Drained on every Tick.
     last_tick_key_events: Vec<KeyEvent>,
-    /// Send side of the action channel — cloned into components so they
+    /// Send side of the action channel - cloned into components so they
     /// can push actions back into the loop from anywhere (including async tasks).
     action_tx: mpsc::UnboundedSender<Action>,
-    /// Receive side — drained every iteration in `handle_actions`.
+    /// Receive side - drained every iteration in `handle_actions`.
     action_rx: mpsc::UnboundedReceiver<Action>,
 
     // ── AWS state ──
     sdk_config: aws_config::SdkConfig,
-    /// Shared S3 client — wrapped in Arc<RwLock> so components can hold
+    /// Shared S3 client - wrapped in Arc<RwLock> so components can hold
     /// a handle that always points to the current client, even after
     /// profile switches.
     s3_client: Arc<RwLock<S3Client>>,
@@ -157,8 +157,8 @@ impl App {
     }
 
     /// The main event loop. Each iteration:
-    ///   1. `handle_events` — poll terminal for input/tick/render events
-    ///   2. `handle_actions` — drain the action queue, mutate state, render
+    ///   1. `handle_events` - poll terminal for input/tick/render events
+    ///   2. `handle_actions` - drain the action queue, mutate state, render
     ///   3. Check for suspend/quit
     pub async fn run(&mut self) -> color_eyre::Result<()> {
         let mut tui = Tui::new()?
@@ -204,8 +204,8 @@ impl App {
     }
 
     /// Focus-aware key routing. Priority order:
-    ///   1. Command bar (when active — captures everything)
-    ///   2. Active view (j/k/Enter etc. — returns Some to claim the key)
+    ///   1. Command bar (when active - captures everything)
+    ///   2. Active view (j/k/Enter etc. - returns Some to claim the key)
     ///   3. Global bindings (:, /, and config keymaps)
     fn handle_key_event(&mut self, key: KeyEvent) -> color_eyre::Result<()> {
         let action_tx = self.action_tx.clone();
@@ -218,7 +218,7 @@ impl App {
             return Ok(());
         }
 
-        // 2. Active view gets first shot — returning Some claims the key
+        // 2. Active view gets first shot - returning Some claims the key
         let view_action = self.active_page_component().handle_key_event(key)?;
         if let Some(action) = view_action {
             action_tx.send(action)?;
@@ -255,7 +255,7 @@ impl App {
     /// Three stages per action:
     ///   1. App-level handling (quit, suspend, mode changes, view switching, AWS reload)
     ///   2. Propagate to chrome components (header, command bar, breadcrumb)
-    ///   3. Propagate to the active view — follow-up actions are re-queued
+    ///   3. Propagate to the active view - follow-up actions are re-queued
     async fn handle_actions(&mut self, tui: &mut Tui) -> color_eyre::Result<()> {
         while let Ok(action) = self.action_rx.try_recv() {
             if action != Action::Tick && action != Action::Render {

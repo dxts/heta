@@ -10,8 +10,8 @@ mod components;
 mod config;
 mod errors;
 mod logging;
-mod tui;
 mod page;
+mod tui;
 mod utils;
 
 #[tokio::main]

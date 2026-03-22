@@ -1,4 +1,4 @@
-# heta — source overview
+# heta - source overview
 
 ## Application lifecycle
 
@@ -31,14 +31,14 @@ main()
 ## Key routing (handle_key_event)
 
 Input focus flows through a priority chain. The first handler to return
-`Some(Action)` claims the key — everything below it is skipped.
+`Some(Action)` claims the key - everything below it is skipped.
 
 ```
 KeyEvent
   │
   ├─ 1. CommandBar (when active)     captures all input for : and / modes
   │
-  ├─ 2. Active view                  j/k/Enter etc. — view-specific bindings
+  ├─ 2. Active view                  j/k/Enter etc. - view-specific bindings
   │
   └─ 3. Global bindings               : → OpenCommandBar
                                       config keymaps (q → Quit, Ctrl-c, etc.)
@@ -71,15 +71,15 @@ Components communicate exclusively through `Action`s on an unbounded mpsc channe
 
 | Module | Purpose |
 |---|---|
-| `main.rs` | Entry point — init, parse CLI, run app |
+| `main.rs` | Entry point - init, parse CLI, run app |
 | `app.rs` | Event loop, key routing, action dispatch, frame rendering |
-| `action.rs` | `Action` enum — every possible state transition |
-| `tui.rs` | Terminal wrapper — raw mode, event stream, tick/render intervals |
+| `action.rs` | `Action` enum - every possible state transition |
+| `tui.rs` | Terminal wrapper - raw mode, event stream, tick/render intervals |
 | `config.rs` | Config loading, keybinding parsing, style parsing |
 | `cli.rs` | CLI argument definitions (clap) |
-| `resource_selector.rs` | `ResourceType` enum — maps `:command` names to views |
+| `resource_selector.rs` | `ResourceType` enum - maps `:command` names to views |
 | `components.rs` | `Component` trait definition |
 | `components/common/` | Always-visible chrome: header, command bar, breadcrumb, fps |
 | `components/profiles.rs` | Profiles table view |
-| `aws/state.rs` | `AwsState` — SDK config, clients, profile/region reload |
+| `aws/state.rs` | `AwsState` - SDK config, clients, profile/region reload |
 | `aws/profiles.rs` | Parse `~/.aws/config` → `ProfileInfo` list (memoized) |

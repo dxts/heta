@@ -1687,6 +1687,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fxhash"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
+dependencies = [
+ "byteorder",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2612,6 +2621,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "pretty_assertions",
+ "rat-ftable",
  "ratatui",
  "serde",
  "serde_json",
@@ -3746,6 +3756,76 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
  "getrandom 0.2.17",
+]
+
+[[package]]
+name = "rat-cursor"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5e21530efd080def42674059771a7a9f10066f79bd0b67ed8a6ef9cbef78917"
+
+[[package]]
+name = "rat-event"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8791fc15b399e958369ce532e9bf2bc3588f364d1e508d0ae122d0fb76a3065"
+dependencies = [
+ "log",
+ "ratatui-core",
+ "ratatui-crossterm",
+]
+
+[[package]]
+name = "rat-focus"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de995d0bfa85aa8a716997903487cf250a35159695cf576be220239bbe1e2bfb"
+dependencies = [
+ "fxhash",
+ "log",
+ "rat-event",
+ "ratatui-core",
+ "ratatui-crossterm",
+]
+
+[[package]]
+name = "rat-ftable"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "911668e644c6415e2811afa422d4b0873bf54040dd26bd3ca697ed33bc060f9c"
+dependencies = [
+ "log",
+ "rat-cursor",
+ "rat-event",
+ "rat-focus",
+ "rat-reloc",
+ "rat-scrolled",
+ "ratatui-core",
+ "ratatui-crossterm",
+ "ratatui-widgets",
+]
+
+[[package]]
+name = "rat-reloc"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb74cb1c265b3a5160001211ed8becbc56ccd8b66855a6b094e097525d98b735"
+dependencies = [
+ "ratatui-core",
+]
+
+[[package]]
+name = "rat-scrolled"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "704022f132ae450adce30adcba41c43503ca3d832611905e6c1e90fe8b94c0c3"
+dependencies = [
+ "log",
+ "rat-event",
+ "rat-reloc",
+ "ratatui-core",
+ "ratatui-crossterm",
+ "ratatui-widgets",
 ]
 
 [[package]]
